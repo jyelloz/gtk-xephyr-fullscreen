@@ -232,7 +232,8 @@ launch_xephyr (GtkWidget *const socket)
         g_strdup_printf ("%lu", window_xid),
         g_strdup ("-screen"),
         g_strdup_printf ("%dx%d", width, height),
-        g_strdup (XEPHYR_DISPLAY)
+        g_strdup (XEPHYR_DISPLAY),
+        NULL
     );
 
     g_spawn_async_with_pipes (
