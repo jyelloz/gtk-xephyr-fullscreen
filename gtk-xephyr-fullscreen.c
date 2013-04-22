@@ -168,7 +168,6 @@ socket_plug_added_cb   (GtkSocket *const socket,
 
     launch_window_manager (GTK_WIDGET (socket));
 
-
 }
 
 static void
@@ -177,6 +176,8 @@ socket_plug_removed_cb (GtkSocket *const socket,
 {
 
     g_debug ("socket unplugged");
+
+    gtk_main_quit ();
 
 }
 
@@ -198,9 +199,6 @@ build_argv             (gchar     *const command, ...)
     va_end (varargs);
 
     gsize const command_length = g_queue_get_length (queue);
-
-    g_debug ("build argv with %lu args", command_length);
-
     gchar **const argv = g_new0 (gchar *, command_length);
     {
         gchar **argv_iter;
