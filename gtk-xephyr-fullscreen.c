@@ -58,6 +58,8 @@ main (gint argc, gchar **argv)
         );
     }
 
+    /* TODO: choose the biggest display and put the window in there. */
+
     GtkWidget *const window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
     GtkWidget *const socket = gtk_socket_new ();
 
@@ -260,6 +262,11 @@ launch_xephyr (GtkWidget *const socket)
 static void
 launch_window_manager (GtkWidget *const socket)
 {
+
+    /*
+     * TODO: It is probably better to start some kind of X session also since
+     * the keyboard is not initialized properly in my experience.
+     */
 
     GError *error = NULL;
     GPid wm_pid;
