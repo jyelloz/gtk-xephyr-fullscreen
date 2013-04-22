@@ -80,7 +80,6 @@ main (gint argc, gchar **argv)
         socket
     );
 
-
     g_signal_connect (
         window,
         "realize",
@@ -102,7 +101,6 @@ main (gint argc, gchar **argv)
         NULL
     );
 
-
     gtk_widget_show_all (window);
 
     gtk_window_fullscreen (GTK_WINDOW (window));
@@ -118,9 +116,9 @@ window_fullscreen_cb   (GtkWidget *const window,
                         GtkSocket *const socket)
 {
 
-    g_return_if_fail (window != NULL);
+    g_return_if_fail (GTK_IS_WINDOW (window));
     g_return_if_fail (event != NULL);
-    g_return_if_fail (socket != NULL);
+    g_return_if_fail (GTK_IS_SOCKET (socket));
 
     if (event->type != GDK_WINDOW_STATE){
         return;
@@ -154,8 +152,8 @@ window_visible_cb      (GtkWidget *const window,
                         GtkSocket *const socket)
 {
 
-    g_return_if_fail (window != NULL);
-    g_return_if_fail (socket != NULL);
+    g_return_if_fail (GTK_IS_WINDOW (window));
+    g_return_if_fail (GTK_IS_SOCKET (socket));
 
 }
 
@@ -163,6 +161,8 @@ static void
 socket_plug_added_cb   (GtkSocket *const socket,
                         gpointer         user_data)
 {
+
+    g_return_if_fail (GTK_IS_SOCKET (socket));
 
     g_debug ("socket plugged, starting window manager");
 
@@ -174,6 +174,8 @@ static void
 socket_plug_removed_cb (GtkSocket *const socket,
                         gpointer         user_data)
 {
+
+    g_return_if_fail (GTK_IS_SOCKET (socket));
 
     g_debug ("socket unplugged");
 
@@ -215,6 +217,8 @@ build_argv             (gchar     *const command, ...)
 static void
 launch_xephyr (GtkWidget *const socket)
 {
+
+    g_return_if_fail (GTK_IS_SOCKET (socket));
 
     GError *error = NULL;
     GPid xephyr_pid;
@@ -261,6 +265,8 @@ launch_xephyr (GtkWidget *const socket)
 static void
 launch_window_manager (GtkWidget *const socket)
 {
+
+    g_return_if_fail (GTK_IS_SOCKET (socket));
 
     /*
      * TODO: It is probably better to start some kind of X session also since
