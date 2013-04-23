@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <glib/gprintf.h>
 
 #include <gtk/gtk.h>
@@ -363,5 +364,8 @@ transfer_xmodmap_keys  (void)
     g_strfreev (xmodmap_out_argv);
     g_strfreev (xmodmap_in_argv);
     g_strfreev (xmodmap_in_envp);
+
+    g_close (xmodmap_pipe[0], NULL);
+    g_close (xmodmap_pipe[1], NULL);
 
 }
