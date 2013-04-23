@@ -237,17 +237,14 @@ launch_xephyr (GtkWidget *const socket)
         NULL
     );
 
-    g_spawn_async_with_pipes (
+    g_spawn_async (
         NULL,
         xephyr_argv,
         NULL,
-        G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+        G_SPAWN_SEARCH_PATH,
         NULL,
         NULL,
         &xephyr_pid,
-        NULL,
-        NULL,
-        NULL,
         &error
     );
 
@@ -287,7 +284,7 @@ launch_window_manager (GtkWidget *const socket)
         NULL
     );
 
-    g_spawn_async_with_pipes (
+    g_spawn_async (
         NULL,
         wm_argv,
         wm_envp,
@@ -295,9 +292,6 @@ launch_window_manager (GtkWidget *const socket)
         NULL,
         NULL,
         &wm_pid,
-        NULL,
-        NULL,
-        NULL,
         &error
     );
 
