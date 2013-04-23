@@ -51,7 +51,7 @@ transfer_xmodmap_keys  (void);
 static void
 watch_xmodmap_closing  (GPid     const pid,
                         gint     const status,
-                        gpointer const fd);
+                        gpointer const user_data);
 
 static void
 launch_ibus_daemon     (void);
@@ -180,8 +180,8 @@ socket_plug_added_cb   (GtkSocket *const socket,
 
     g_debug ("socket plugged, starting window manager");
 
-    transfer_xmodmap_keys ();
     launch_window_manager (GTK_WIDGET (socket));
+    transfer_xmodmap_keys ();
 
 }
 
@@ -315,21 +315,10 @@ transfer_xmodmap_keys  (void)
 {
 
     GError *error = NULL;
-    gint xmodmap_pipe[2];
+    gint xmodmap_out_fd;
+    gint xmodmap_in_fd;
     GPid xmodmap_out_pid;
     GPid xmodmap_in_pid;
-
-    const gint pipe_result = pipe (xmodmap_pipe);
-    if (pipe_result){
-        g_printf ("failed to create pipe for " XMODMAP_COMMAND "\n");
-    }
-
-    gchar **const xmodmap_in_envp = g_environ_setenv (
-        g_get_environ (),
-        g_strdup ("DISPLAY"),
-        g_strdup (XEPHYR_DISPLAY),
-        TRUE
-    );
 
     gchar **const xmodmap_out_argv = build_argv (
         g_strdup (XMODMAP_COMMAND),
@@ -343,18 +332,11 @@ transfer_xmodmap_keys  (void)
         NULL
     );
 
-    g_spawn_async_with_pipes (
-        NULL,
-        xmodmap_in_argv,
-        xmodmap_in_envp,
-        G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
-        NULL,
-        NULL,
-        &xmodmap_in_pid,
-        &xmodmap_pipe[1],
-        NULL,
-        NULL,
-        &error
+    gchar **const xmodmap_in_envp = g_environ_setenv (
+        g_get_environ (),
+        g_strdup ("DISPLAY"),
+        g_strdup (XEPHYR_DISPLAY),
+        TRUE
     );
 
     g_spawn_async_with_pipes (
@@ -366,39 +348,91 @@ transfer_xmodmap_keys  (void)
         NULL,
         &xmodmap_out_pid,
         NULL,
-        &xmodmap_pipe[0],
+        &xmodmap_out_fd,
         NULL,
         &error
     );
+
+    if (error){
+        g_printf (
+            "failed to launch " XMODMAP_COMMAND " output command: %s\n",
+            error->message
+        );
+    }
+
+    error = NULL;
+
+    g_spawn_async_with_pipes (
+        NULL,
+        xmodmap_in_argv,
+        xmodmap_in_envp,
+        G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
+        NULL,
+        NULL,
+        &xmodmap_in_pid,
+        &xmodmap_in_fd,
+        NULL,
+        NULL,
+        &error
+    );
+
+    if (error){
+        g_printf (
+            "failed to launch " XMODMAP_COMMAND " input command: %s\n",
+            error->message
+        );
+    }
 
     g_strfreev (xmodmap_out_argv);
     g_strfreev (xmodmap_in_argv);
     g_strfreev (xmodmap_in_envp);
 
+    guchar buffer[64];
+    for ( ; ; ){
+        gsize const read_bytes = read (
+            xmodmap_out_fd,
+            buffer,
+            64
+        );
+
+        gsize written_bytes = 0;
+        while (written_bytes < read_bytes){
+            written_bytes += write (
+                xmodmap_in_fd,
+                buffer + written_bytes,
+                read_bytes - written_bytes
+            );
+        }
+
+        if (read_bytes != 64){
+            break;
+        }
+    }
+
+    close (xmodmap_out_fd);
+    close (xmodmap_in_fd);
+
     g_child_watch_add (
         xmodmap_out_pid,
         watch_xmodmap_closing,
-        GINT_TO_POINTER (xmodmap_pipe[0])
+        NULL
     );
 
     g_child_watch_add (
         xmodmap_in_pid,
         watch_xmodmap_closing,
-        GINT_TO_POINTER (xmodmap_pipe[1])
+        NULL
     );
-
 
 }
 
 static void
 watch_xmodmap_closing  (GPid     const pid,
                         gint     const status,
-                        gpointer const fd)
+                        gpointer const user_data)
 {
 
     g_debug ("closing pid %ld", (long) pid);
-
-    g_close (GPOINTER_TO_INT (fd), NULL);
     g_spawn_close_pid (pid);
 
 }
