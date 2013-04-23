@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+#include <unistd.h>
+
 #include <glib.h>
 #include <glib/gprintf.h>
 
@@ -10,9 +12,10 @@
 
 #include <X11/Xlib.h>
 
-#define XEPHYR_COMMAND "Xephyr"
-#define XEPHYR_DISPLAY ":3"
-#define WM_COMMAND     "metacity"
+#define XEPHYR_COMMAND  "Xephyr"
+#define XEPHYR_DISPLAY  ":3"
+#define XMODMAP_COMMAND "xmodmap"
+#define WM_COMMAND      "metacity"
 
 static void
 window_visible_cb      (GtkWidget *const window,
@@ -39,6 +42,9 @@ launch_xephyr          (GtkWidget *const socket);
 
 static void
 launch_window_manager  (GtkWidget *const socket);
+
+static void
+transfer_xmodmap_keys  (void);
 
 gint
 main (gint argc, gchar **argv)
@@ -164,6 +170,7 @@ socket_plug_added_cb   (GtkSocket *const socket,
 
     g_debug ("socket plugged, starting window manager");
 
+    transfer_xmodmap_keys ();
     launch_window_manager (GTK_WIDGET (socket));
 
 }
@@ -219,7 +226,6 @@ launch_xephyr (GtkWidget *const socket)
     g_return_if_fail (GTK_IS_SOCKET (socket));
 
     GError *error = NULL;
-    GPid xephyr_pid;
 
     const gint width = gtk_widget_get_allocated_width (socket);
     const gint height = gtk_widget_get_allocated_height (socket);
@@ -243,15 +249,12 @@ launch_xephyr (GtkWidget *const socket)
         G_SPAWN_SEARCH_PATH,
         NULL,
         NULL,
-        &xephyr_pid,
+        NULL,
         &error
     );
 
     if (error){
         g_printf ("failed to start " XEPHYR_COMMAND ": %s\n", error->message);
-    } else {
-        g_debug ("window XID is %lu", window_xid);
-        g_debug ("launched " XEPHYR_COMMAND " with pid %ld", (long) xephyr_pid);
     }
 
     g_strfreev (xephyr_argv);
@@ -263,13 +266,7 @@ launch_window_manager (GtkWidget *const socket)
 
     g_return_if_fail (GTK_IS_SOCKET (socket));
 
-    /*
-     * TODO: It is probably better to start some kind of X session also since
-     * the keyboard is not initialized properly in my experience.
-     */
-
     GError *error = NULL;
-    GPid wm_pid;
 
     gchar **const wm_envp = g_environ_setenv (
         g_get_environ (),
@@ -290,17 +287,81 @@ launch_window_manager (GtkWidget *const socket)
         G_SPAWN_SEARCH_PATH,
         NULL,
         NULL,
-        &wm_pid,
+        NULL,
         &error
     );
 
     if (error){
         g_printf ("failed to start " WM_COMMAND ": %s\n", error->message);
-    } else {
-        g_debug ("launched " WM_COMMAND " with pid %ld", (long) wm_pid);
     }
 
     g_strfreev (wm_argv);
     g_strfreev (wm_envp);
+
+}
+
+static void
+transfer_xmodmap_keys  (void)
+{
+
+    GError *error = NULL;
+    gint xmodmap_pipe[2];
+
+    const gint pipe_result = pipe (xmodmap_pipe);
+    if (pipe_result){
+        g_printf ("failed to create pipe for " XMODMAP_COMMAND "\n");
+    }
+
+    gchar **const xmodmap_in_envp = g_environ_setenv (
+        g_get_environ (),
+        g_strdup ("DISPLAY"),
+        g_strdup (XEPHYR_DISPLAY),
+        TRUE
+    );
+
+    gchar **const xmodmap_out_argv = build_argv (
+        g_strdup (XMODMAP_COMMAND),
+        g_strdup ("-pke"),
+        NULL
+    );
+
+    gchar **const xmodmap_in_argv = build_argv (
+        g_strdup (XMODMAP_COMMAND),
+        g_strdup ("-"),
+        NULL
+    );
+
+    g_spawn_async_with_pipes (
+        NULL,
+        xmodmap_in_argv,
+        xmodmap_in_envp,
+        G_SPAWN_SEARCH_PATH,
+        NULL,
+        NULL,
+        NULL,
+        &xmodmap_pipe[1],
+        NULL,
+        NULL,
+        &error
+    );
+
+    g_spawn_async_with_pipes (
+        NULL,
+        xmodmap_out_argv,
+        NULL,
+        G_SPAWN_SEARCH_PATH,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        &xmodmap_pipe[0],
+        NULL,
+        &error
+    );
+
+
+    g_strfreev (xmodmap_out_argv);
+    g_strfreev (xmodmap_in_argv);
+    g_strfreev (xmodmap_in_envp);
 
 }
