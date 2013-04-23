@@ -3,6 +3,8 @@ AC_INIT([gtk-xephyr-fullscreen], [0.1])
 AC_CONFIG_AUX_DIR([build])
 AC_CONFIG_MACRO_DIR([m4])
 
+LT_INIT
+
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 
 AM_SILENT_RULES([yes])
