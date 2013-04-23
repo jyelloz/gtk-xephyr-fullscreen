@@ -364,8 +364,8 @@ transfer_xmodmap_keys  (void)
         G_SPAWN_SEARCH_PATH,
         NULL,
         NULL,
-        NULL,
         &xmodmap_out_pid,
+        NULL,
         &xmodmap_pipe[0],
         NULL,
         &error
