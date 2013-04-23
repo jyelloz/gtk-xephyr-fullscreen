@@ -3,8 +3,8 @@ PACKAGES = gtk+-3.0 gtk+-x11-3.0 gdk-3.0 gdk-x11-3.0 glib-2.0
 CPPFLAGS += $(shell pkg-config --cflags $(PACKAGES))
 LDFLAGS += $(shell pkg-config --libs $(PACKAGES))
 
-CFLAGS = -pedantic -Wall -std=gnu99
-CXXFLAGS = -pedantic -Wall -std=gnu++98
+CFLAGS += -pedantic -Wall -std=gnu99
+CXXFLAGS += -pedantic -Wall -std=gnu++98
 
 CC := clang
 CXX := clang++
