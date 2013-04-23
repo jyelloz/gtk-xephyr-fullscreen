@@ -1,5 +1,7 @@
 ACLOCAL_AMFLAGS = -I m4
 
+AM_CFLAGS = -std=gnu99 -pedantic -Wall
+
 NULL =
 
 bin_PROGRAMS = gtk-xephyr-fullscreen
