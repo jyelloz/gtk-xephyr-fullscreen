@@ -13,10 +13,11 @@
 
 #include <X11/Xlib.h>
 
-#define XEPHYR_COMMAND  "Xephyr"
-#define XEPHYR_DISPLAY  ":3"
-#define XMODMAP_COMMAND "xmodmap"
-#define WM_COMMAND      "metacity"
+#define XEPHYR_COMMAND      "Xephyr"
+#define XEPHYR_DISPLAY      ":3"
+#define XMODMAP_COMMAND     "xmodmap"
+#define WM_COMMAND          "metacity"
+#define IBUS_DAEMON_COMMAND "ibus-daemon"
 
 static void
 window_visible_cb      (GtkWidget *const window,
@@ -46,6 +47,9 @@ launch_window_manager  (GtkWidget *const socket);
 
 static void
 transfer_xmodmap_keys  (void);
+
+static void
+launch_ibus_daemon     (void);
 
 gint
 main (gint argc, gchar **argv)
@@ -367,5 +371,49 @@ transfer_xmodmap_keys  (void)
 
     g_close (xmodmap_pipe[0], NULL);
     g_close (xmodmap_pipe[1], NULL);
+
+}
+
+static void
+launch_ibus_daemon     (void)
+{
+
+    GError *error = NULL;
+
+    gchar **const ibus_daemon_envp = g_environ_setenv (
+        g_get_environ (),
+        g_strdup ("DISPLAY"),
+        g_strdup (XEPHYR_DISPLAY),
+        TRUE
+    );
+
+    gchar **const ibus_daemon_argv = build_argv (
+        g_strdup (IBUS_DAEMON_COMMAND),
+        g_strdup ("--replace"),
+        g_strdup ("--xim"),
+        g_strdup ("--panel"),
+        g_strdup ("disable"),
+        NULL
+    );
+
+    g_spawn_async (
+        NULL,
+        ibus_daemon_argv,
+        ibus_daemon_envp,
+        G_SPAWN_SEARCH_PATH,
+        NULL,
+        NULL,
+        NULL,
+        &error
+    );
+
+    if (error){
+        g_printf (
+            "failed to start " IBUS_DAEMON_COMMAND ": %s\n", error->message
+        );
+    }
+
+    g_strfreev (ibus_daemon_argv);
+    g_strfreev (ibus_daemon_envp);
 
 }
