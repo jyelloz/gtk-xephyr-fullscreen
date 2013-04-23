@@ -49,6 +49,11 @@ static void
 transfer_xmodmap_keys  (void);
 
 static void
+watch_xmodmap_closing  (GPid     const pid,
+                        gint     const status,
+                        gpointer const fd);
+
+static void
 launch_ibus_daemon     (void);
 
 gint
@@ -311,6 +316,8 @@ transfer_xmodmap_keys  (void)
 
     GError *error = NULL;
     gint xmodmap_pipe[2];
+    GPid xmodmap_out_pid;
+    GPid xmodmap_in_pid;
 
     const gint pipe_result = pipe (xmodmap_pipe);
     if (pipe_result){
@@ -343,7 +350,7 @@ transfer_xmodmap_keys  (void)
         G_SPAWN_SEARCH_PATH,
         NULL,
         NULL,
-        NULL,
+        &xmodmap_in_pid,
         &xmodmap_pipe[1],
         NULL,
         NULL,
@@ -358,21 +365,44 @@ transfer_xmodmap_keys  (void)
         NULL,
         NULL,
         NULL,
-        NULL,
+        &xmodmap_out_pid,
         &xmodmap_pipe[0],
         NULL,
         &error
     );
 
-
     g_strfreev (xmodmap_out_argv);
     g_strfreev (xmodmap_in_argv);
     g_strfreev (xmodmap_in_envp);
 
-    g_close (xmodmap_pipe[0], NULL);
-    g_close (xmodmap_pipe[1], NULL);
+    g_child_watch_add (
+        xmodmap_out_pid,
+        watch_xmodmap_closing,
+        GINT_TO_POINTER (xmodmap_pipe[0])
+    );
+
+    g_child_watch_add (
+        xmodmap_in_pid,
+        watch_xmodmap_closing,
+        GINT_TO_POINTER (xmodmap_pipe[1])
+    );
+
 
 }
+
+static void
+watch_xmodmap_closing  (GPid     const pid,
+                        gint     const status,
+                        gpointer const fd)
+{
+
+    g_debug ("closing pid %ld", (long) pid);
+
+    g_close (GPOINTER_TO_INT (fd), NULL);
+    g_spawn_close_pid (pid);
+
+}
+
 
 static void
 launch_ibus_daemon     (void)
