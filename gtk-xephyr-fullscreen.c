@@ -56,34 +56,18 @@ watch_xmodmap_closing  (GPid     const pid,
 static void
 launch_ibus_daemon     (void);
 
+static GdkRectangle
+find_largest_monitor   (GdkScreen *const screen);
+
 gint
 main (gint argc, gchar **argv)
 {
 
     gtk_init (&argc, &argv);
 
-    GdkScreen *const screen = gdk_screen_get_default ();
-    const gint n_monitors = gdk_screen_get_n_monitors (
-        screen
+    GdkRectangle const largest_monitor = find_largest_monitor (
+        gdk_screen_get_default ()
     );
-    GdkRectangle largest_monitor;
-    {
-        gint i;
-        gint max_area = 0;
-        for (i = 0; i < n_monitors; i++){
-            GdkRectangle geometry;
-            gdk_screen_get_monitor_geometry (
-                screen,
-                i,
-                &geometry
-            );
-            gint area = geometry.width * geometry.height;
-            if (area > max_area){
-                max_area = area;
-                largest_monitor = geometry;
-            }
-        }
-    }
 
     GtkWidget *const window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
     GtkWidget *const socket = gtk_socket_new ();
@@ -495,5 +479,40 @@ launch_ibus_daemon     (void)
 
     g_strfreev (ibus_daemon_argv);
     g_strfreev (ibus_daemon_envp);
+
+}
+
+static GdkRectangle
+find_largest_monitor   (GdkScreen *const screen)
+{
+
+    GdkRectangle largest_monitor = {
+        .x = 0,
+        .y = 0,
+        .width = 0,
+        .height = 0
+    };
+
+    const gint n_monitors = gdk_screen_get_n_monitors (
+        screen
+    );
+
+    gint i;
+    gint max_area = 0;
+    for (i = 0; i < n_monitors; i++){
+        GdkRectangle monitor;
+        gdk_screen_get_monitor_geometry (
+            screen,
+            i,
+            &monitor
+        );
+        gint area = monitor.width * monitor.height;
+        if (area > max_area){
+            max_area = area;
+            largest_monitor = monitor;
+        }
+    }
+
+    return largest_monitor;
 
 }
