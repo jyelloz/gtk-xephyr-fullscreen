@@ -1,5 +1,11 @@
 AC_INIT([gtk-xephyr-fullscreen], [0.1])
+
+AC_CONFIG_AUX_DIR([build])
+AC_CONFIG_MACRO_DIR([m4])
+
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
+
+AM_SILENT_RULES([yes])
 
 AC_PREREQ([2.69])
 
@@ -9,6 +15,8 @@ AC_CHECK_HEADERS(
     [stdlib.h]
 )
 PKG_CHECK_MODULES([GLIB], [glib-2.0])
+PKG_CHECK_MODULES([GDK], [gdk-3.0])
+PKG_CHECK_MODULES([GDK_X11], [gdk-x11-3.0])
 PKG_CHECK_MODULES([GTK], [gtk+-3.0])
 PKG_CHECK_MODULES([GTK_X11], [gtk+-x11-3.0])
 
