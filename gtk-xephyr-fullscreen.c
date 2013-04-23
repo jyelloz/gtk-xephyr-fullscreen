@@ -63,7 +63,6 @@ main (gint argc, gchar **argv)
     GtkWidget *const window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
     GtkWidget *const socket = gtk_socket_new ();
 
-    gtk_widget_set_size_request (socket, 800, 450);
     gtk_container_add (GTK_CONTAINER (window), socket);
 
     g_signal_connect (
