@@ -62,21 +62,37 @@ main (gint argc, gchar **argv)
 
     gtk_init (&argc, &argv);
 
-    GdkDisplayManager *const manager = gdk_display_manager_get ();
-    GSList *const displays = gdk_display_manager_list_displays (manager);
-
-    GSList *current;
-    for (current = displays; current != NULL; current = current->next){
-        g_printf (
-            "display: \"%s\"\n",
-            gdk_display_get_name (GDK_DISPLAY (current->data))
-        );
+    GdkScreen *const screen = gdk_screen_get_default ();
+    const gint n_monitors = gdk_screen_get_n_monitors (
+        screen
+    );
+    GdkRectangle largest_monitor;
+    {
+        gint i;
+        gint max_area = 0;
+        for (i = 0; i < n_monitors; i++){
+            GdkRectangle geometry;
+            gdk_screen_get_monitor_geometry (
+                screen,
+                i,
+                &geometry
+            );
+            gint area = geometry.width * geometry.height;
+            if (area > max_area){
+                max_area = area;
+                largest_monitor = geometry;
+            }
+        }
     }
-
-    /* TODO: choose the biggest display and put the window in there. */
 
     GtkWidget *const window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
     GtkWidget *const socket = gtk_socket_new ();
+
+    gtk_window_move (
+        GTK_WINDOW (window),
+        largest_monitor.x,
+        largest_monitor.y
+    );
 
     gtk_container_add (GTK_CONTAINER (window), socket);
 
