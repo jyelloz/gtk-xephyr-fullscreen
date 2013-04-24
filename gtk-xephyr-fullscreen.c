@@ -7,6 +7,10 @@
 #include <glib/gstdio.h>
 #include <glib/gprintf.h>
 
+#include <gio/gio.h>
+#include <gio/gunixinputstream.h>
+#include <gio/gunixoutputstream.h>
+
 #include <gtk/gtk.h>
 #include <gtk/gtkx.h>
 #include <gdk/gdkx.h>
@@ -387,30 +391,26 @@ transfer_xmodmap_keys  (void)
     g_strfreev (xmodmap_in_argv);
     g_strfreev (xmodmap_in_envp);
 
-    guchar buffer[64];
-    for ( ; ; ){
-        gsize const read_bytes = read (
-            xmodmap_out_fd,
-            buffer,
-            64
-        );
+    GInputStream *const xmodmap_stdout = g_unix_input_stream_new (
+        xmodmap_out_fd,
+        TRUE
+    );
 
-        gsize written_bytes = 0;
-        while (written_bytes < read_bytes){
-            written_bytes += write (
-                xmodmap_in_fd,
-                buffer + written_bytes,
-                read_bytes - written_bytes
-            );
-        }
+    GOutputStream *const xmodmap_stdin = g_unix_output_stream_new (
+        xmodmap_in_fd,
+        TRUE
+    );
 
-        if (read_bytes != 64){
-            break;
-        }
-    }
-
-    close (xmodmap_out_fd);
-    close (xmodmap_in_fd);
+    g_output_stream_splice (
+        xmodmap_stdin,
+        xmodmap_stdout,
+        (
+            G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE |
+            G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET
+        ),
+        NULL,
+        NULL
+    );
 
     g_child_watch_add (
         xmodmap_out_pid,
