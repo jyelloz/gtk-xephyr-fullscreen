@@ -49,7 +49,7 @@ launch_xephyr          (GtkWidget *const socket);
 static void
 launch_window_manager  (GtkWidget *const socket);
 
-static void
+static gboolean
 transfer_xmodmap_keys  (void);
 
 static void
@@ -57,7 +57,7 @@ watch_xmodmap_closing  (GPid     const pid,
                         gint     const status,
                         gpointer const user_data);
 
-static void
+static gboolean
 launch_ibus_daemon     (void);
 
 static GdkRectangle
@@ -185,7 +185,21 @@ socket_plug_added_cb   (GtkSocket *const socket,
     g_debug ("socket plugged, starting window manager");
 
     launch_window_manager (GTK_WIDGET (socket));
-    transfer_xmodmap_keys ();
+
+    if (launch_ibus_daemon ()){
+        return;
+    }
+
+    g_warning ("failed to start ibus-daemon, trying xmodmap instead");
+
+    if (transfer_xmodmap_keys ()){
+        return;
+    }
+
+    g_warning (
+        "failed to transfer xmodmap key bindings, "
+        "keyboard might not work correctly."
+    );
 
 }
 
@@ -314,7 +328,7 @@ launch_window_manager (GtkWidget *const socket)
 
 }
 
-static void
+static gboolean
 transfer_xmodmap_keys  (void)
 {
 
@@ -343,7 +357,7 @@ transfer_xmodmap_keys  (void)
         TRUE
     );
 
-    g_spawn_async_with_pipes (
+    const gboolean xmodmap_out_result = g_spawn_async_with_pipes (
         NULL,
         xmodmap_out_argv,
         NULL,
@@ -366,7 +380,7 @@ transfer_xmodmap_keys  (void)
 
     error = NULL;
 
-    g_spawn_async_with_pipes (
+    const gboolean xmodmap_in_result = g_spawn_async_with_pipes (
         NULL,
         xmodmap_in_argv,
         xmodmap_in_envp,
@@ -424,6 +438,8 @@ transfer_xmodmap_keys  (void)
         NULL
     );
 
+    return xmodmap_out_result && xmodmap_in_result;
+
 }
 
 static void
@@ -438,7 +454,7 @@ watch_xmodmap_closing  (GPid     const pid,
 }
 
 
-static void
+static gboolean
 launch_ibus_daemon     (void)
 {
 
@@ -460,7 +476,7 @@ launch_ibus_daemon     (void)
         NULL
     );
 
-    g_spawn_async (
+    const gboolean ibus_daemon_result = g_spawn_async (
         NULL,
         ibus_daemon_argv,
         ibus_daemon_envp,
@@ -479,6 +495,8 @@ launch_ibus_daemon     (void)
 
     g_strfreev (ibus_daemon_argv);
     g_strfreev (ibus_daemon_envp);
+
+    return ibus_daemon_result;
 
 }
 
