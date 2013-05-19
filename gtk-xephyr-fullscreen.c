@@ -22,6 +22,7 @@
 #define XMODMAP_COMMAND     "xmodmap"
 #define WM_COMMAND          "metacity"
 #define IBUS_DAEMON_COMMAND "ibus-daemon"
+#define XRDB_COMMAND        "xrdb"
 
 static void
 window_visible_cb      (GtkWidget *const window,
@@ -52,8 +53,11 @@ launch_window_manager  (GtkWidget *const socket);
 static gboolean
 transfer_xmodmap_keys  (void);
 
+static gboolean
+transfer_xrdb          (void);
+
 static void
-watch_xmodmap_closing  (GPid     const pid,
+watch_closing          (GPid     const pid,
                         gint     const status,
                         gpointer const user_data);
 
@@ -183,6 +187,8 @@ socket_plug_added_cb   (GtkSocket *const socket,
     g_return_if_fail (GTK_IS_SOCKET (socket));
 
     g_debug ("socket plugged, starting window manager");
+
+    transfer_xrdb ();
 
     launch_window_manager (GTK_WIDGET (socket));
 
@@ -428,13 +434,13 @@ transfer_xmodmap_keys  (void)
 
     g_child_watch_add (
         xmodmap_out_pid,
-        watch_xmodmap_closing,
+        watch_closing,
         NULL
     );
 
     g_child_watch_add (
         xmodmap_in_pid,
-        watch_xmodmap_closing,
+        watch_closing,
         NULL
     );
 
@@ -442,8 +448,122 @@ transfer_xmodmap_keys  (void)
 
 }
 
+static gboolean
+transfer_xrdb          (void)
+{
+
+    GError *error = NULL;
+    gint xrdb_out_fd;
+    gint xrdb_in_fd;
+    GPid xrdb_out_pid;
+    GPid xrdb_in_pid;
+
+    gchar **const xrdb_out_argv = build_argv (
+        g_strdup (XRDB_COMMAND),
+        g_strdup ("-query"),
+        NULL
+    );
+
+    gchar **const xrdb_in_argv = build_argv (
+        g_strdup (XRDB_COMMAND),
+        g_strdup ("-merge"),
+        NULL
+    );
+
+    gchar **const xrdb_in_envp = g_environ_setenv (
+        g_get_environ (),
+        g_strdup ("DISPLAY"),
+        g_strdup (XEPHYR_DISPLAY),
+        TRUE
+    );
+
+    const gboolean xrdb_out_result = g_spawn_async_with_pipes (
+        NULL,
+        xrdb_out_argv,
+        NULL,
+        G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
+        NULL,
+        NULL,
+        &xrdb_out_pid,
+        NULL,
+        &xrdb_out_fd,
+        NULL,
+        &error
+    );
+
+    if (error){
+        g_printf (
+            "failed to launch " XRDB_COMMAND " output command: %s\n",
+            error->message
+        );
+    }
+
+    error = NULL;
+
+    const gboolean xrdb_in_result = g_spawn_async_with_pipes (
+        NULL,
+        xrdb_in_argv,
+        xrdb_in_envp,
+        G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
+        NULL,
+        NULL,
+        &xrdb_in_pid,
+        &xrdb_in_fd,
+        NULL,
+        NULL,
+        &error
+    );
+
+    if (error){
+        g_printf (
+            "failed to launch " XRDB_COMMAND " input command: %s\n",
+            error->message
+        );
+    }
+
+    g_strfreev (xrdb_out_argv);
+    g_strfreev (xrdb_in_argv);
+    g_strfreev (xrdb_in_envp);
+
+    GInputStream *const xrdb_stdout = g_unix_input_stream_new (
+        xrdb_out_fd,
+        TRUE
+    );
+
+    GOutputStream *const xrdb_stdin = g_unix_output_stream_new (
+        xrdb_in_fd,
+        TRUE
+    );
+
+    g_output_stream_splice (
+        xrdb_stdin,
+        xrdb_stdout,
+        (
+            G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE |
+            G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET
+        ),
+        NULL,
+        NULL
+    );
+
+    g_child_watch_add (
+        xrdb_out_pid,
+        watch_closing,
+        NULL
+    );
+
+    g_child_watch_add (
+        xrdb_in_pid,
+        watch_closing,
+        NULL
+    );
+
+    return xrdb_out_result && xrdb_in_result;
+
+}
+
 static void
-watch_xmodmap_closing  (GPid     const pid,
+watch_closing          (GPid     const pid,
                         gint     const status,
                         gpointer const user_data)
 {
