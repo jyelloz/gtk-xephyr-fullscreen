@@ -24,31 +24,73 @@
 #define IBUS_DAEMON_COMMAND "ibus-daemon"
 #define XRDB_COMMAND        "xrdb"
 
-static void
-window_visible_cb      (GtkWidget *const window,
-                        GtkSocket *const socket);
+G_BEGIN_DECLS
+
+typedef struct _GxfSubprocess GxfSubprocess;
+typedef struct _GxfContext GxfContext;
+
+struct _GxfContext {
+
+    GtkWidget *window;
+    GtkWidget *socket;
+
+    GAsyncQueue *subprocesses;
+
+};
+
+struct _GxfSubprocess {
+    GPid pid;
+    gchar *proctitle;
+};
+
+static GxfContext *
+gxf_context_new        (void);
 
 static void
-window_fullscreen_cb   (GtkWidget *const window,
-                        GdkEvent  *const event,
-                        GtkSocket *const socket);
+gxf_context_free       (GxfContext *const self);
 
 static void
-socket_plug_added_cb   (GtkSocket *const socket,
-                        gpointer         user_data);
+gxf_subprocess_free    (GxfSubprocess *const self);
+
+static GxfSubprocess *
+gxf_subprocess_new     (GPid   const pid,
+                        gchar *const proctitle);
 
 static void
-socket_plug_removed_cb (GtkSocket *const socket,
-                        gpointer         user_data);
+activate_cb            (GtkApplication *const application,
+                        GxfContext     *const gxf);
+
+static void
+shutdown_cb            (GtkApplication *const application,
+                        GxfContext     *const gxf);
+
+static void
+window_visible_cb      (GtkWidget  *const window,
+                        GxfContext *const gxf);
+
+static void
+window_fullscreen_cb   (GtkWidget  *const window,
+                        GdkEvent   *const event,
+                        GxfContext *const gxf);
+
+static void
+socket_plug_added_cb   (GtkSocket  *const socket,
+                        GxfContext *const gxf);
+
+static void
+socket_plug_removed_cb (GtkSocket  *const socket,
+                        GxfContext *const gxf);
 
 static gchar **
 build_argv             (gchar     *const command, ...);
 
 static void
-launch_xephyr          (GtkWidget *const socket);
+launch_xephyr          (GtkWidget *const socket,
+                        GPid      *const pid);
 
 static void
-launch_window_manager  (GtkWidget *const socket);
+launch_window_manager  (GtkWidget *const socket,
+                        GPid      *const pid);
 
 static gboolean
 transfer_xmodmap_keys  (void);
@@ -62,16 +104,160 @@ watch_closing          (GPid     const pid,
                         gpointer const user_data);
 
 static gboolean
-launch_ibus_daemon     (void);
+launch_ibus_daemon     (GPid *const pid);
 
 static GdkRectangle
 find_largest_monitor   (GdkScreen *const screen);
+
+static void
+gxf_quit               (GxfContext *const gxf);
+
+G_END_DECLS
+
+static GxfContext *
+gxf_context_new        (void)
+{
+
+    GxfContext *const self = g_new0 (GxfContext, 1);
+
+    self->subprocesses = g_async_queue_new ();
+
+    return self;
+
+}
+
+static void
+gxf_context_free       (GxfContext *const self)
+{
+
+    if (self == NULL){
+        return;
+    }
+
+
+
+    g_free (self);
+
+}
+
+
+static void
+gxf_quit               (GxfContext *const gxf)
+{
+
+    g_return_if_fail (gxf != NULL);
+
+    GAsyncQueue *const subprocesses = gxf->subprocesses;
+
+    while (g_async_queue_length (subprocesses) > 0){
+
+        GxfSubprocess *const subprocess = (
+            (GxfSubprocess *) g_async_queue_pop (subprocesses)
+        );
+
+        if (subprocess == NULL){
+            continue;
+        }
+
+        GPid const pid = subprocess->pid;
+        gchar *const proctitle = subprocess->proctitle;
+
+        if (pid < 1){
+            continue;
+        }
+
+        kill (pid, SIGINT);
+        g_debug ("sent a SIGINT to %s:%d", proctitle, pid);
+
+        gxf_subprocess_free (subprocess);
+
+    }
+
+}
+
+static void
+gxf_subprocess_free    (GxfSubprocess *const self)
+{
+
+    if (self == NULL){
+        return;
+    }
+
+    GPid const pid = self->pid;
+    gchar *const proctitle = self->proctitle;
+
+    g_spawn_close_pid (pid);
+    if (proctitle != NULL){
+        g_free (proctitle);
+    }
+
+    g_free (self);
+
+}
+
+static GxfSubprocess *
+gxf_subprocess_new     (GPid   const pid,
+                        gchar *const proctitle)
+
+{
+
+    GxfSubprocess *const self = g_new0 (GxfSubprocess, 1);
+
+    self->pid = pid;
+    self->proctitle = proctitle;
+
+    return self;
+
+}
 
 gint
 main (gint argc, gchar **argv)
 {
 
-    gtk_init (&argc, &argv);
+    GtkApplication *const application = gtk_application_new (
+        "me.yelloz.jordan.gtk-xephyr-fullscreen",
+        0
+    );
+    GxfContext *const gxf = gxf_context_new ();
+
+    g_signal_connect (
+        application,
+        "activate",
+        G_CALLBACK (activate_cb),
+        gxf
+    );
+
+    g_signal_connect (
+        application,
+        "shutdown",
+        G_CALLBACK (shutdown_cb),
+        gxf
+    );
+
+    const gint status = g_application_run (
+        G_APPLICATION (application),
+        argc,
+        argv
+    );
+
+    g_object_unref (application);
+    gxf_context_free (gxf);
+
+    return status;
+
+}
+
+static void
+activate_cb            (GtkApplication *const application,
+                        GxfContext     *const gxf)
+{
+
+    GList *const windows = gtk_application_get_windows (application);
+
+    if (windows){
+        gtk_window_present (GTK_WINDOW (windows->data));
+        return;
+    }
 
     GdkRectangle const largest_monitor = find_largest_monitor (
         gdk_screen_get_default ()
@@ -79,6 +265,9 @@ main (gint argc, gchar **argv)
 
     GtkWidget *const window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
     GtkWidget *const socket = gtk_socket_new ();
+
+    gxf->window = window;
+    gxf->socket = socket;
 
     gtk_window_move (
         GTK_WINDOW (window),
@@ -90,53 +279,59 @@ main (gint argc, gchar **argv)
 
     g_signal_connect (
         window,
-        "destroy",
-        G_CALLBACK (gtk_main_quit),
-        NULL
-    );
-
-    g_signal_connect (
-        window,
         "window-state-event",
         G_CALLBACK (window_fullscreen_cb),
-        socket
+        gxf
     );
 
     g_signal_connect (
         window,
         "realize",
         G_CALLBACK (window_visible_cb),
-        socket
+        gxf
     );
 
     g_signal_connect (
         socket,
         "plug-added",
         G_CALLBACK (socket_plug_added_cb),
-        NULL
+        gxf
     );
 
     g_signal_connect (
         socket,
         "plug-removed",
         G_CALLBACK (socket_plug_removed_cb),
-        NULL
+        gxf
     );
+
+    gtk_window_set_application (GTK_WINDOW (window), application);
 
     gtk_widget_show_all (window);
 
     gtk_window_fullscreen (GTK_WINDOW (window));
 
-    gtk_main ();
-
-    return 0;
 }
 
 static void
-window_fullscreen_cb   (GtkWidget *const window,
-                        GdkEvent  *const event,
-                        GtkSocket *const socket)
+shutdown_cb            (GtkApplication *const application,
+                        GxfContext     *const gxf)
 {
+
+    gxf_quit (gxf);
+
+}
+
+static void
+window_fullscreen_cb   (GtkWidget  *const window,
+                        GdkEvent   *const event,
+                        GxfContext *const gxf)
+{
+
+    GPid xephyr_pid;
+
+    GtkSocket *const socket = GTK_SOCKET (gxf->socket);
+    GAsyncQueue *const subprocesses = gxf->subprocesses;
 
     g_return_if_fail (GTK_IS_WINDOW (window));
     g_return_if_fail (event != NULL);
@@ -160,7 +355,14 @@ window_fullscreen_cb   (GtkWidget *const window,
 
     if (switched_to_fullscreen){
         g_debug ("window is now fullscreen");
-        launch_xephyr (GTK_WIDGET (socket));
+        launch_xephyr (GTK_WIDGET (socket), &xephyr_pid);
+        g_async_queue_push (
+            subprocesses,
+            gxf_subprocess_new (
+                xephyr_pid,
+                g_strdup (XEPHYR_COMMAND)
+            )
+        );
     } else if (fullscreen) {
         g_debug ("window is already fullscreen");
     } else {
@@ -170,29 +372,50 @@ window_fullscreen_cb   (GtkWidget *const window,
 }
 
 static void
-window_visible_cb      (GtkWidget *const window,
-                        GtkSocket *const socket)
+window_visible_cb      (GtkWidget  *const window,
+                        GxfContext *const gxf)
 {
 
     g_return_if_fail (GTK_IS_WINDOW (window));
-    g_return_if_fail (GTK_IS_SOCKET (socket));
+    g_return_if_fail (gxf != NULL);
 
 }
 
 static void
-socket_plug_added_cb   (GtkSocket *const socket,
-                        gpointer         user_data)
+socket_plug_added_cb   (GtkSocket  *const socket,
+                        GxfContext *const gxf)
 {
 
+    GPid wm_pid;
+    GPid ibus_pid;
+
     g_return_if_fail (GTK_IS_SOCKET (socket));
+    g_return_if_fail (gxf != NULL);
+
+    GAsyncQueue *const subprocesses = gxf->subprocesses;
 
     g_debug ("socket plugged, starting window manager");
 
     transfer_xrdb ();
 
-    launch_window_manager (GTK_WIDGET (socket));
+    launch_window_manager (GTK_WIDGET (socket), &wm_pid);
 
-    if (launch_ibus_daemon ()){
+    g_async_queue_push (
+        subprocesses,
+        gxf_subprocess_new (
+            wm_pid,
+            g_strdup (WM_COMMAND)
+        )
+    );
+
+    if (launch_ibus_daemon (&ibus_pid)){
+        g_async_queue_push (
+            subprocesses,
+            gxf_subprocess_new (
+                ibus_pid,
+                g_strdup (IBUS_DAEMON_COMMAND)
+            )
+        );
         return;
     }
 
@@ -210,15 +433,12 @@ socket_plug_added_cb   (GtkSocket *const socket,
 }
 
 static void
-socket_plug_removed_cb (GtkSocket *const socket,
-                        gpointer         user_data)
+socket_plug_removed_cb (GtkSocket  *const socket,
+                        GxfContext *const gxf)
 {
 
     g_return_if_fail (GTK_IS_SOCKET (socket));
-
     g_debug ("socket unplugged");
-
-    gtk_main_quit ();
 
 }
 
@@ -254,7 +474,8 @@ build_argv             (gchar     *const command, ...)
 
 
 static void
-launch_xephyr (GtkWidget *const socket)
+launch_xephyr (GtkWidget *const socket,
+               GPid      *const pid)
 {
 
     g_return_if_fail (GTK_IS_SOCKET (socket));
@@ -283,7 +504,7 @@ launch_xephyr (GtkWidget *const socket)
         G_SPAWN_SEARCH_PATH,
         NULL,
         NULL,
-        NULL,
+        pid,
         &error
     );
 
@@ -295,7 +516,8 @@ launch_xephyr (GtkWidget *const socket)
 }
 
 static void
-launch_window_manager (GtkWidget *const socket)
+launch_window_manager (GtkWidget *const socket,
+                       GPid      *const pid)
 {
 
     g_return_if_fail (GTK_IS_SOCKET (socket));
@@ -321,7 +543,7 @@ launch_window_manager (GtkWidget *const socket)
         G_SPAWN_SEARCH_PATH,
         NULL,
         NULL,
-        NULL,
+        pid,
         &error
     );
 
@@ -575,7 +797,7 @@ watch_closing          (GPid     const pid,
 
 
 static gboolean
-launch_ibus_daemon     (void)
+launch_ibus_daemon     (GPid *const pid)
 {
 
     GError *error = NULL;
@@ -602,7 +824,7 @@ launch_ibus_daemon     (void)
         G_SPAWN_SEARCH_PATH,
         NULL,
         NULL,
-        NULL,
+        pid,
         &error
     );
 
