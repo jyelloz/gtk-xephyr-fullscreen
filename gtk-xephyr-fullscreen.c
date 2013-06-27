@@ -591,8 +591,7 @@ launch_ibus_daemon     (void)
         g_strdup (IBUS_DAEMON_COMMAND),
         g_strdup ("--replace"),
         g_strdup ("--xim"),
-        g_strdup ("--panel"),
-        g_strdup ("disable"),
+        g_strdup ("--panel=disable"),
         NULL
     );
 
