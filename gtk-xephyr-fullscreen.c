@@ -134,7 +134,9 @@ gxf_context_free       (GxfContext *const self)
         return;
     }
 
+    GAsyncQueue *const subprocesses = self->subprocesses;
 
+    g_async_queue_unref (subprocesses);
 
     g_free (self);
 
