@@ -149,14 +149,16 @@ gxf_quit               (GxfContext *const gxf)
 
     GAsyncQueue *const subprocesses = gxf->subprocesses;
 
-    while (g_async_queue_length (subprocesses) > 0){
+    g_async_queue_lock (subprocesses);
+
+    while (TRUE){
 
         GxfSubprocess *const subprocess = (
-            (GxfSubprocess *) g_async_queue_pop (subprocesses)
+            (GxfSubprocess *) g_async_queue_try_pop_unlocked (subprocesses)
         );
 
         if (subprocess == NULL){
-            continue;
+            break;
         }
 
         GPid const pid = subprocess->pid;
@@ -172,6 +174,8 @@ gxf_quit               (GxfContext *const gxf)
         gxf_subprocess_free (subprocess);
 
     }
+
+    g_async_queue_unlock (subprocesses);
 
 }
 
