@@ -898,7 +898,7 @@ find_largest_monitor   (GdkScreen *const screen)
             i,
             &monitor
         );
-        gint area = monitor.width * monitor.height;
+        const gint area = monitor.width * monitor.height;
         if (area > max_area){
             max_area = area;
             largest_monitor = monitor;
