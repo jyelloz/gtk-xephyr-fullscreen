@@ -3,6 +3,9 @@
 
 #include <unistd.h>
 
+#include <sys/types.h>
+#include <signal.h>
+
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <glib/gprintf.h>
@@ -216,6 +219,22 @@ gxf_subprocess_new     (GPid   const pid,
 
 }
 
+static GPrivate application_priv = G_PRIVATE_INIT (g_object_unref);
+
+static void
+sigint_handler (const gint       signal)
+{
+
+    g_debug ("SIGINT caught");
+
+    GApplication *const application = G_APPLICATION (
+        g_private_get (&application_priv)
+    );;
+
+    g_application_quit (application);
+
+}
+
 gint
 main (gint argc, gchar **argv)
 {
@@ -225,6 +244,14 @@ main (gint argc, gchar **argv)
         0
     );
     GxfContext *const gxf = gxf_context_new ();
+
+    g_private_set (&application_priv, application);
+
+    struct sigaction sigint_handler_sa;
+    sigint_handler_sa.sa_handler = sigint_handler;
+    sigint_handler_sa.sa_flags = 0;
+
+    sigaction (SIGINT, &sigint_handler_sa, NULL);
 
     g_signal_connect (
         application,
