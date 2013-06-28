@@ -206,6 +206,7 @@ gxf_quit               (GxfContext *const gxf)
     gchar *const proctitle = subprocess->proctitle;
 
     if (pid < 1){
+      gxf_subprocess_free (subprocess);
       continue;
     }
 
