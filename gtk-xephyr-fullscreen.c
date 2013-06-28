@@ -228,7 +228,7 @@ sigint_handler (const gint       signal)
 
   GApplication *const application = G_APPLICATION (
       g_private_get (&application_priv)
-  );;
+  );
 
   g_application_quit (application);
 
