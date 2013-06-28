@@ -112,9 +112,6 @@ launch_ibus_daemon     (GPid *const pid);
 static GdkRectangle
 find_largest_monitor   (GdkScreen *const screen);
 
-static void
-gxf_quit               (GxfContext *const gxf);
-
 static GPrivate application_priv = G_PRIVATE_INIT (g_object_unref);
 
 G_END_DECLS
@@ -179,45 +176,6 @@ gxf_subprocess_free    (GxfSubprocess *const self)
   }
 
   g_free (self);
-
-}
-
-static void
-gxf_quit               (GxfContext *const gxf)
-{
-
-  g_return_if_fail (gxf != NULL);
-
-  GAsyncQueue *const subprocesses = gxf->subprocesses;
-
-  g_async_queue_lock (subprocesses);
-
-  while (TRUE){
-
-    GxfSubprocess *const subprocess = (
-        (GxfSubprocess *) g_async_queue_try_pop_unlocked (subprocesses)
-    );
-
-    if (subprocess == NULL){
-      break;
-    }
-
-    GPid const pid = subprocess->pid;
-    gchar *const proctitle = subprocess->proctitle;
-
-    if (pid < 1){
-      gxf_subprocess_free (subprocess);
-      continue;
-    }
-
-    kill (pid, SIGINT);
-    g_debug ("sent a SIGINT to %s:%d", proctitle, pid);
-
-    gxf_subprocess_free (subprocess);
-
-  }
-
-  g_async_queue_unlock (subprocesses);
 
 }
 
@@ -351,7 +309,38 @@ shutdown_cb            (GtkApplication *const application,
                         GxfContext     *const gxf)
 {
 
-  gxf_quit (gxf);
+  g_return_if_fail (gxf != NULL);
+
+  GAsyncQueue *const subprocesses = gxf->subprocesses;
+
+  g_async_queue_lock (subprocesses);
+
+  while (TRUE){
+
+    GxfSubprocess *const subprocess = (
+        (GxfSubprocess *) g_async_queue_try_pop_unlocked (subprocesses)
+    );
+
+    if (subprocess == NULL){
+      break;
+    }
+
+    GPid const pid = subprocess->pid;
+    gchar *const proctitle = subprocess->proctitle;
+
+    if (pid < 1){
+      gxf_subprocess_free (subprocess);
+      continue;
+    }
+
+    kill (pid, SIGINT);
+    g_debug ("sent a SIGINT to %s:%d", proctitle, pid);
+
+    gxf_subprocess_free (subprocess);
+
+  }
+
+  g_async_queue_unlock (subprocesses);
 
 }
 
