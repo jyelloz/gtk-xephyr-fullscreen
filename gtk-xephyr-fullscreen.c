@@ -115,6 +115,8 @@ find_largest_monitor   (GdkScreen *const screen);
 static void
 gxf_quit               (GxfContext *const gxf);
 
+static GPrivate application_priv = G_PRIVATE_INIT (g_object_unref);
+
 G_END_DECLS
 
 static GxfContext *
@@ -140,6 +142,41 @@ gxf_context_free       (GxfContext *const self)
   GAsyncQueue *const subprocesses = self->subprocesses;
 
   g_async_queue_unref (subprocesses);
+
+  g_free (self);
+
+}
+
+static GxfSubprocess *
+gxf_subprocess_new     (GPid   const pid,
+                        gchar *const proctitle)
+
+{
+
+  GxfSubprocess *const self = g_new0 (GxfSubprocess, 1);
+
+  self->pid = pid;
+  self->proctitle = proctitle;
+
+  return self;
+
+}
+
+static void
+gxf_subprocess_free    (GxfSubprocess *const self)
+{
+
+  if (self == NULL){
+    return;
+  }
+
+  GPid const pid = self->pid;
+  gchar *const proctitle = self->proctitle;
+
+  g_spawn_close_pid (pid);
+  if (proctitle != NULL){
+    g_free (proctitle);
+  }
 
   g_free (self);
 
@@ -182,43 +219,6 @@ gxf_quit               (GxfContext *const gxf)
   g_async_queue_unlock (subprocesses);
 
 }
-
-static void
-gxf_subprocess_free    (GxfSubprocess *const self)
-{
-
-  if (self == NULL){
-    return;
-  }
-
-  GPid const pid = self->pid;
-  gchar *const proctitle = self->proctitle;
-
-  g_spawn_close_pid (pid);
-  if (proctitle != NULL){
-    g_free (proctitle);
-  }
-
-  g_free (self);
-
-}
-
-static GxfSubprocess *
-gxf_subprocess_new     (GPid   const pid,
-                        gchar *const proctitle)
-
-{
-
-  GxfSubprocess *const self = g_new0 (GxfSubprocess, 1);
-
-  self->pid = pid;
-  self->proctitle = proctitle;
-
-  return self;
-
-}
-
-static GPrivate application_priv = G_PRIVATE_INIT (g_object_unref);
 
 static void
 sigint_handler (const gint       signal)
