@@ -52,12 +52,12 @@ gxf_context_new        (void);
 static void
 gxf_context_free       (GxfContext *const self);
 
-static void
-gxf_subprocess_free    (GxfSubprocess *const self);
-
 static GxfSubprocess *
 gxf_subprocess_new     (GPid   const pid,
                         gchar *const proctitle);
+
+static void
+gxf_subprocess_free    (GxfSubprocess *const self);
 
 static void
 activate_cb            (GtkApplication *const application,
@@ -117,7 +117,7 @@ gxf_quit               (GxfContext *const gxf);
 
 G_END_DECLS
 
-  static GxfContext *
+static GxfContext *
 gxf_context_new        (void)
 {
 
@@ -129,7 +129,7 @@ gxf_context_new        (void)
 
 }
 
-  static void
+static void
 gxf_context_free       (GxfContext *const self)
 {
 
@@ -145,8 +145,7 @@ gxf_context_free       (GxfContext *const self)
 
 }
 
-
-  static void
+static void
 gxf_quit               (GxfContext *const gxf)
 {
 
@@ -184,7 +183,7 @@ gxf_quit               (GxfContext *const gxf)
 
 }
 
-  static void
+static void
 gxf_subprocess_free    (GxfSubprocess *const self)
 {
 
@@ -204,7 +203,7 @@ gxf_subprocess_free    (GxfSubprocess *const self)
 
 }
 
-  static GxfSubprocess *
+static GxfSubprocess *
 gxf_subprocess_new     (GPid   const pid,
                         gchar *const proctitle)
 
@@ -221,7 +220,7 @@ gxf_subprocess_new     (GPid   const pid,
 
 static GPrivate application_priv = G_PRIVATE_INIT (g_object_unref);
 
-  static void
+static void
 sigint_handler (const gint       signal)
 {
 
@@ -235,7 +234,7 @@ sigint_handler (const gint       signal)
 
 }
 
-  gint
+gint
 main (gint argc, gchar **argv)
 {
 
@@ -280,7 +279,7 @@ main (gint argc, gchar **argv)
 
 }
 
-  static void
+static void
 activate_cb            (GtkApplication *const application,
                         GxfContext     *const gxf)
 {
@@ -346,7 +345,7 @@ activate_cb            (GtkApplication *const application,
 
 }
 
-  static void
+static void
 shutdown_cb            (GtkApplication *const application,
                         GxfContext     *const gxf)
 {
@@ -355,7 +354,7 @@ shutdown_cb            (GtkApplication *const application,
 
 }
 
-  static void
+static void
 window_fullscreen_cb   (GtkWidget  *const window,
                         GdkEvent   *const event,
                         GxfContext *const gxf)
@@ -404,7 +403,7 @@ window_fullscreen_cb   (GtkWidget  *const window,
 
 }
 
-  static void
+static void
 window_visible_cb      (GtkWidget  *const window,
                         GxfContext *const gxf)
 {
@@ -414,7 +413,7 @@ window_visible_cb      (GtkWidget  *const window,
 
 }
 
-  static void
+static void
 socket_plug_added_cb   (GtkSocket  *const socket,
                         GxfContext *const gxf)
 {
@@ -465,7 +464,7 @@ socket_plug_added_cb   (GtkSocket  *const socket,
 
 }
 
-  static void
+static void
 socket_plug_removed_cb (GtkSocket  *const socket,
                         GxfContext *const gxf)
 {
@@ -475,7 +474,7 @@ socket_plug_removed_cb (GtkSocket  *const socket,
 
 }
 
-  static gchar **
+static gchar **
 build_argv             (gchar     *const command, ...)
 {
 
@@ -506,7 +505,7 @@ build_argv             (gchar     *const command, ...)
 }
 
 
-  static void
+static void
 launch_xephyr (GtkWidget *const socket,
                GPid      *const pid)
 {
@@ -548,7 +547,7 @@ launch_xephyr (GtkWidget *const socket,
   g_strfreev (xephyr_argv);
 }
 
-  static void
+static void
 launch_window_manager (GtkWidget *const socket,
                        GPid      *const pid)
 {
@@ -589,7 +588,7 @@ launch_window_manager (GtkWidget *const socket,
 
 }
 
-  static gboolean
+static gboolean
 transfer_xmodmap_keys  (void)
 {
 
@@ -703,7 +702,7 @@ transfer_xmodmap_keys  (void)
 
 }
 
-  static gboolean
+static gboolean
 transfer_xrdb          (void)
 {
 
@@ -817,7 +816,7 @@ transfer_xrdb          (void)
 
 }
 
-  static void
+static void
 watch_closing          (GPid     const pid,
                         gint     const status,
                         gpointer const user_data)
@@ -829,7 +828,7 @@ watch_closing          (GPid     const pid,
 }
 
 
-  static gboolean
+static gboolean
 launch_ibus_daemon     (GPid *const pid)
 {
 
@@ -874,7 +873,7 @@ launch_ibus_daemon     (GPid *const pid)
 
 }
 
-  static GdkRectangle
+static GdkRectangle
 find_largest_monitor   (GdkScreen *const screen)
 {
 
