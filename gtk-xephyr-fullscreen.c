@@ -88,11 +88,11 @@ static gchar **
 build_argv             (gchar     *const command, ...);
 
 static void
-launch_xephyr          (GtkWidget *const socket,
+launch_xephyr          (GtkSocket *const socket,
                         GPid      *const pid);
 
 static void
-launch_window_manager  (GtkWidget *const socket,
+launch_window_manager  (GtkSocket *const socket,
                         GPid      *const pid);
 
 static gboolean
@@ -132,11 +132,11 @@ static void
 gxf_context_free       (GxfContext *const self)
 {
 
-  if (self == NULL){
+  GAsyncQueue *const subprocesses = self ? self->subprocesses : NULL;
+
+  if (subprocesses == NULL) {
     return;
   }
-
-  GAsyncQueue *const subprocesses = self->subprocesses;
 
   g_async_queue_unref (subprocesses);
 
@@ -163,16 +163,18 @@ static void
 gxf_subprocess_free    (GxfSubprocess *const self)
 {
 
-  if (self == NULL){
+  if (self == NULL) {
     return;
   }
 
-  GPid const pid = self->pid;
-  gchar *const proctitle = self->proctitle;
+  {
+    GPid const pid = self->pid;
+    gchar *const proctitle = self->proctitle;
 
-  g_spawn_close_pid (pid);
-  if (proctitle != NULL){
-    g_free (proctitle);
+    g_spawn_close_pid (pid);
+    if (proctitle != NULL) {
+      g_free (proctitle);
+    }
   }
 
   g_free (self);
@@ -183,11 +185,11 @@ static void
 sigint_handler (const gint       signal)
 {
 
-  g_debug ("SIGINT caught");
-
   GApplication *const application = G_APPLICATION (
-      g_private_get (&application_priv)
+    g_private_get (&application_priv)
   );
+
+  g_debug ("SIGINT caught");
 
   g_application_quit (application);
 
@@ -197,38 +199,39 @@ gint
 main (gint argc, gchar **argv)
 {
 
+  gint status;
+  struct sigaction sigint_handler_sa;
   GtkApplication *const application = gtk_application_new (
-      "me.yelloz.jordan.gtk-xephyr-fullscreen",
-      0
+    "me.yelloz.jordan.gtk-xephyr-fullscreen",
+    0
   );
   GxfContext *const gxf = gxf_context_new ();
 
   g_private_set (&application_priv, application);
 
-  struct sigaction sigint_handler_sa;
   sigint_handler_sa.sa_handler = sigint_handler;
   sigint_handler_sa.sa_flags = 0;
 
   sigaction (SIGINT, &sigint_handler_sa, NULL);
 
   g_signal_connect (
-      application,
-      "activate",
-      G_CALLBACK (activate_cb),
-      gxf
+    application,
+    "activate",
+    G_CALLBACK (activate_cb),
+    gxf
   );
 
   g_signal_connect (
-      application,
-      "shutdown",
-      G_CALLBACK (shutdown_cb),
-      gxf
+    application,
+    "shutdown",
+    G_CALLBACK (shutdown_cb),
+    gxf
   );
 
-  const gint status = g_application_run (
-      G_APPLICATION (application),
-      argc,
-      argv
+  status = g_application_run (
+    G_APPLICATION (application),
+    argc,
+    argv
   );
 
   g_object_unref (application);
@@ -245,98 +248,108 @@ activate_cb            (GtkApplication *const application,
 
   GList *const windows = gtk_application_get_windows (application);
 
-  if (windows){
+  if (windows) {
     gtk_window_present (GTK_WINDOW (windows->data));
     return;
   }
 
-  GdkRectangle const largest_monitor = find_largest_monitor (
+  {
+
+    GdkRectangle const largest_monitor = find_largest_monitor (
       gdk_screen_get_default ()
-  );
+    );
 
-  GtkWidget *const window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
-  GtkWidget *const socket = gtk_socket_new ();
+    GtkWidget *const window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
+    GtkWidget *const socket = gtk_socket_new ();
 
-  gxf->window = window;
-  gxf->socket = socket;
+    gxf->window = window;
+    gxf->socket = socket;
 
-  gtk_window_move (
+    gtk_window_move (
       GTK_WINDOW (window),
       largest_monitor.x,
       largest_monitor.y
-  );
+    );
 
-  gtk_container_add (GTK_CONTAINER (window), socket);
+    gtk_container_add (GTK_CONTAINER (window), socket);
 
-  g_signal_connect (
+    g_signal_connect (
       window,
       "window-state-event",
       G_CALLBACK (window_fullscreen_cb),
       gxf
-  );
+    );
 
-  g_signal_connect (
+    g_signal_connect (
       window,
       "realize",
       G_CALLBACK (window_visible_cb),
       gxf
-  );
+    );
 
-  g_signal_connect (
+    g_signal_connect (
       socket,
       "plug-added",
       G_CALLBACK (socket_plug_added_cb),
       gxf
-  );
+    );
 
-  g_signal_connect (
+    g_signal_connect (
       socket,
       "plug-removed",
       G_CALLBACK (socket_plug_removed_cb),
       gxf
-  );
+    );
 
-  gtk_window_set_application (GTK_WINDOW (window), application);
+    gtk_window_set_application (GTK_WINDOW (window), application);
 
-  gtk_widget_show_all (window);
+    gtk_widget_show_all (window);
 
-  gtk_window_fullscreen (GTK_WINDOW (window));
+    gtk_window_fullscreen (GTK_WINDOW (window));
+
+  }
 
 }
 
 static void
-shutdown_cb            (GtkApplication *const application,
-                        GxfContext     *const gxf)
+shutdown_subprocess    (GxfSubprocess *const subprocess)
 {
 
-  g_return_if_fail (gxf != NULL);
+  GPid const pid = subprocess->pid;
+  gchar *const proctitle = subprocess->proctitle;
 
-  GAsyncQueue *const subprocesses = gxf->subprocesses;
+  if (pid < 1) {
+    gxf_subprocess_free (subprocess);
+    return;
+  }
+
+  kill (pid, SIGINT);
+  g_debug ("sent a SIGINT to %s:%d", proctitle, pid);
+
+  gxf_subprocess_free (subprocess);
+
+}
+
+static void
+shutdown_cb            (GtkApplication  *const application,
+                        GxfContext      *const gxf)
+{
+
+  GAsyncQueue *const subprocesses = gxf ? gxf->subprocesses : NULL;
+
+  if (subprocesses == NULL) {
+    return;
+  }
 
   g_async_queue_lock (subprocesses);
 
-  while (TRUE){
+  while (TRUE) {
 
     GxfSubprocess *const subprocess = (
-        (GxfSubprocess *) g_async_queue_try_pop_unlocked (subprocesses)
+      (GxfSubprocess *) g_async_queue_try_pop_unlocked (subprocesses)
     );
 
-    if (subprocess == NULL){
-      break;
-    }
-
-    GPid const pid = subprocess->pid;
-    gchar *const proctitle = subprocess->proctitle;
-
-    if (pid < 1){
-      gxf_subprocess_free (subprocess);
-      continue;
-    }
-
-    kill (pid, SIGINT);
-    g_debug ("sent a SIGINT to %s:%d", proctitle, pid);
-
-    gxf_subprocess_free (subprocess);
+    shutdown_subprocess (subprocess);
 
   }
 
@@ -359,36 +372,40 @@ window_fullscreen_cb   (GtkWidget  *const window,
   g_return_if_fail (event != NULL);
   g_return_if_fail (GTK_IS_SOCKET (socket));
 
-  if (event->type != GDK_WINDOW_STATE){
+  if (event->type != GDK_WINDOW_STATE) {
     return;
   }
 
-  GdkEventWindowState const window_state = event->window_state;
+  {
 
-  const gboolean fullscreen = (
+    GdkEventWindowState const window_state = event->window_state;
+
+    const gboolean fullscreen = (
       event->window_state.new_window_state & GDK_WINDOW_STATE_FULLSCREEN
-  );
+    );
 
-  const gboolean switched_to_fullscreen = (
+    const gboolean switched_to_fullscreen = (
       fullscreen
       &&
       (window_state.changed_mask & GDK_WINDOW_STATE_FULLSCREEN)
-  );
+    );
 
-  if (switched_to_fullscreen){
-    g_debug ("window is now fullscreen");
-    launch_xephyr (GTK_WIDGET (socket), &xephyr_pid);
-    g_async_queue_push (
+    if (switched_to_fullscreen) {
+      g_debug ("window is now fullscreen");
+      launch_xephyr (socket, &xephyr_pid);
+      g_async_queue_push (
         subprocesses,
         gxf_subprocess_new (
-            xephyr_pid,
-            g_strdup (XEPHYR_COMMAND)
+          xephyr_pid,
+          g_strdup (XEPHYR_COMMAND)
         )
-    );
-  } else if (fullscreen) {
-    g_debug ("window is already fullscreen");
-  } else {
-    g_debug ("window is not fullscreen");
+      );
+    } else if (fullscreen) {
+      g_debug ("window is already fullscreen");
+    } else {
+      g_debug ("window is not fullscreen");
+    }
+
   }
 
 }
@@ -411,45 +428,42 @@ socket_plug_added_cb   (GtkSocket  *const socket,
   GPid wm_pid;
   GPid ibus_pid;
 
-  g_return_if_fail (GTK_IS_SOCKET (socket));
-  g_return_if_fail (gxf != NULL);
-
   GAsyncQueue *const subprocesses = gxf->subprocesses;
 
   g_debug ("socket plugged, starting window manager");
 
   transfer_xrdb ();
 
-  launch_window_manager (GTK_WIDGET (socket), &wm_pid);
+  launch_window_manager (socket, &wm_pid);
 
   g_async_queue_push (
-      subprocesses,
-      gxf_subprocess_new (
-          wm_pid,
-          g_strdup (WM_COMMAND)
-      )
+    subprocesses,
+    gxf_subprocess_new (
+      wm_pid,
+      g_strdup (WM_COMMAND)
+    )
   );
 
-  if (launch_ibus_daemon (&ibus_pid)){
+  if (launch_ibus_daemon (&ibus_pid)) {
     g_async_queue_push (
-        subprocesses,
-        gxf_subprocess_new (
-            ibus_pid,
-            g_strdup (IBUS_DAEMON_COMMAND)
-        )
+      subprocesses,
+      gxf_subprocess_new (
+        ibus_pid,
+        g_strdup (IBUS_DAEMON_COMMAND)
+      )
     );
     return;
   }
 
   g_warning ("failed to start ibus-daemon, trying xmodmap instead");
 
-  if (transfer_xmodmap_keys ()){
+  if (transfer_xmodmap_keys ()) {
     return;
   }
 
   g_warning (
-      "failed to transfer xmodmap key bindings, "
-      "keyboard might not work correctly."
+    "failed to transfer xmodmap key bindings, "
+    "keyboard might not work correctly."
   );
 
 }
@@ -474,102 +488,104 @@ build_argv             (gchar     *const command, ...)
   va_start (varargs, command);
   {
     gchar *arg;
-    for (arg = command; arg != NULL; arg = va_arg (varargs, gchar *)){
+    for (arg = command; arg != NULL; arg = va_arg (varargs, gchar *)) {
       g_debug ("got arg %s", arg);
       g_queue_push_tail (queue, arg);
     }
   }
   va_end (varargs);
 
-  gsize const command_length = g_queue_get_length (queue);
-  gchar **const argv = g_new0 (gchar *, command_length);
   {
+
+    gsize const command_length = g_queue_get_length (queue);
+    gchar **const argv = g_new0 (gchar *, command_length);
+
     gchar **argv_iter;
-    for (argv_iter = argv; !g_queue_is_empty (queue); argv_iter++){
+    for (argv_iter = argv; !g_queue_is_empty (queue); argv_iter++) {
       *argv_iter = g_queue_pop_head (queue);
     }
-  }
 
-  return argv;
+    return argv;
+
+  }
 
 }
 
 
 static void
-launch_xephyr (GtkWidget *const socket,
+launch_xephyr (GtkSocket *const socket,
                GPid      *const pid)
 {
 
-  g_return_if_fail (GTK_IS_SOCKET (socket));
-
   GError *error = NULL;
 
-  const gint width = gtk_widget_get_allocated_width (socket);
-  const gint height = gtk_widget_get_allocated_height (socket);
+  GtkWidget *const widget = GTK_WIDGET (socket);
 
-  XID const window_xid = gtk_socket_get_id (GTK_SOCKET (socket));
+  const gint width = gtk_widget_get_allocated_width (widget);
+  const gint height = gtk_widget_get_allocated_height (widget);
+
+  XID const window_xid = gtk_socket_get_id (socket);
 
   gchar **const xephyr_argv = build_argv (
-      g_strdup (XEPHYR_COMMAND),
-      g_strdup ("-parent"),
-      g_strdup_printf ("%lu", window_xid),
-      g_strdup ("-screen"),
-      g_strdup_printf ("%dx%d", width, height),
-      g_strdup (XEPHYR_DISPLAY),
-      NULL
+    g_strdup (XEPHYR_COMMAND),
+    g_strdup ("-parent"),
+    g_strdup_printf ("%lu", window_xid),
+    g_strdup ("-screen"),
+    g_strdup_printf ("%dx%d", width, height),
+    g_strdup (XEPHYR_DISPLAY),
+    NULL
   );
 
   g_spawn_async (
-      NULL,
-      xephyr_argv,
-      NULL,
-      G_SPAWN_SEARCH_PATH,
-      NULL,
-      NULL,
-      pid,
-      &error
+    NULL,
+    xephyr_argv,
+    NULL,
+    G_SPAWN_SEARCH_PATH,
+    NULL,
+    NULL,
+    pid,
+    &error
   );
 
-  if (error){
+  if (error) {
     g_printf ("failed to start " XEPHYR_COMMAND ": %s\n", error->message);
   }
 
   g_strfreev (xephyr_argv);
+
 }
 
 static void
-launch_window_manager (GtkWidget *const socket,
-                       GPid      *const pid)
+launch_window_manager  (GtkSocket *const socket,
+                        GPid      *const pid)
 {
-
-  g_return_if_fail (GTK_IS_SOCKET (socket));
 
   GError *error = NULL;
 
   gchar **const wm_envp = g_environ_setenv (
-      g_get_environ (),
-      g_strdup ("DISPLAY"),
-      g_strdup (XEPHYR_DISPLAY),
-      TRUE
+    g_get_environ (),
+    g_strdup ("DISPLAY"),
+    g_strdup (XEPHYR_DISPLAY),
+    TRUE
   );
 
   gchar **const wm_argv = build_argv (
-      g_strdup (WM_COMMAND),
-      NULL
+    g_strdup (WM_COMMAND),
+    NULL
   );
 
   g_spawn_async (
-      NULL,
-      wm_argv,
-      wm_envp,
-      G_SPAWN_SEARCH_PATH,
-      NULL,
-      NULL,
-      pid,
-      &error
+    NULL,
+    wm_argv,
+    wm_envp,
+    G_SPAWN_SEARCH_PATH,
+    NULL,
+    NULL,
+    pid,
+    &error
   );
 
-  if (error){
+  if (error) {
     g_printf ("failed to start " WM_COMMAND ": %s\n", error->message);
   }
 
@@ -589,65 +605,65 @@ transfer_xmodmap_keys  (void)
   GPid xmodmap_in_pid;
 
   gchar **const xmodmap_out_argv = build_argv (
-      g_strdup (XMODMAP_COMMAND),
-      g_strdup ("-pke"),
-      NULL
+    g_strdup (XMODMAP_COMMAND),
+    g_strdup ("-pke"),
+    NULL
   );
 
   gchar **const xmodmap_in_argv = build_argv (
-      g_strdup (XMODMAP_COMMAND),
-      g_strdup ("-"),
-      NULL
+    g_strdup (XMODMAP_COMMAND),
+    g_strdup ("-"),
+    NULL
   );
 
   gchar **const xmodmap_in_envp = g_environ_setenv (
-      g_get_environ (),
-      g_strdup ("DISPLAY"),
-      g_strdup (XEPHYR_DISPLAY),
-      TRUE
+    g_get_environ (),
+    g_strdup ("DISPLAY"),
+    g_strdup (XEPHYR_DISPLAY),
+    TRUE
   );
 
-  const gboolean xmodmap_out_result = g_spawn_async_with_pipes (
-      NULL,
-      xmodmap_out_argv,
-      NULL,
-      G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
-      NULL,
-      NULL,
-      &xmodmap_out_pid,
-      NULL,
-      &xmodmap_out_fd,
-      NULL,
-      &error
+  g_spawn_async_with_pipes (
+    NULL,
+    xmodmap_out_argv,
+    NULL,
+    G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
+    NULL,
+    NULL,
+    &xmodmap_out_pid,
+    NULL,
+    &xmodmap_out_fd,
+    NULL,
+    &error
   );
 
-  if (error){
+  if (error) {
     g_printf (
-        "failed to launch " XMODMAP_COMMAND " output command: %s\n",
-        error->message
+      "failed to launch " XMODMAP_COMMAND " output command: %s\n",
+      error->message
     );
   }
 
   error = NULL;
 
-  const gboolean xmodmap_in_result = g_spawn_async_with_pipes (
-      NULL,
-      xmodmap_in_argv,
-      xmodmap_in_envp,
-      G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
-      NULL,
-      NULL,
-      &xmodmap_in_pid,
-      &xmodmap_in_fd,
-      NULL,
-      NULL,
-      &error
+  g_spawn_async_with_pipes (
+    NULL,
+    xmodmap_in_argv,
+    xmodmap_in_envp,
+    G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
+    NULL,
+    NULL,
+    &xmodmap_in_pid,
+    &xmodmap_in_fd,
+    NULL,
+    NULL,
+    &error
   );
 
-  if (error){
+  if (error) {
     g_printf (
-        "failed to launch " XMODMAP_COMMAND " input command: %s\n",
-        error->message
+      "failed to launch " XMODMAP_COMMAND " input command: %s\n",
+      error->message
     );
   }
 
@@ -655,40 +671,44 @@ transfer_xmodmap_keys  (void)
   g_strfreev (xmodmap_in_argv);
   g_strfreev (xmodmap_in_envp);
 
-  GInputStream *const xmodmap_stdout = g_unix_input_stream_new (
+  {
+
+    GInputStream *const xmodmap_stdout = g_unix_input_stream_new (
       xmodmap_out_fd,
       TRUE
-  );
+    );
 
-  GOutputStream *const xmodmap_stdin = g_unix_output_stream_new (
+    GOutputStream *const xmodmap_stdin = g_unix_output_stream_new (
       xmodmap_in_fd,
       TRUE
-  );
+    );
 
-  g_output_stream_splice (
+    g_output_stream_splice (
       xmodmap_stdin,
       xmodmap_stdout,
       (
-          G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE |
-          G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET
+        G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE |
+        G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET
       ),
       NULL,
       NULL
+    );
+
+  }
+
+  g_child_watch_add (
+    xmodmap_out_pid,
+    watch_closing,
+    NULL
   );
 
   g_child_watch_add (
-      xmodmap_out_pid,
-      watch_closing,
-      NULL
+    xmodmap_in_pid,
+    watch_closing,
+    NULL
   );
 
-  g_child_watch_add (
-      xmodmap_in_pid,
-      watch_closing,
-      NULL
-  );
-
-  return xmodmap_out_result && xmodmap_in_result;
+  return TRUE;
 
 }
 
@@ -703,65 +723,65 @@ transfer_xrdb          (void)
   GPid xrdb_in_pid;
 
   gchar **const xrdb_out_argv = build_argv (
-      g_strdup (XRDB_COMMAND),
-      g_strdup ("-query"),
-      NULL
+    g_strdup (XRDB_COMMAND),
+    g_strdup ("-query"),
+    NULL
   );
 
   gchar **const xrdb_in_argv = build_argv (
-      g_strdup (XRDB_COMMAND),
-      g_strdup ("-merge"),
-      NULL
+    g_strdup (XRDB_COMMAND),
+    g_strdup ("-merge"),
+    NULL
   );
 
   gchar **const xrdb_in_envp = g_environ_setenv (
-      g_get_environ (),
-      g_strdup ("DISPLAY"),
-      g_strdup (XEPHYR_DISPLAY),
-      TRUE
+    g_get_environ (),
+    g_strdup ("DISPLAY"),
+    g_strdup (XEPHYR_DISPLAY),
+    TRUE
   );
 
-  const gboolean xrdb_out_result = g_spawn_async_with_pipes (
-      NULL,
-      xrdb_out_argv,
-      NULL,
-      G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
-      NULL,
-      NULL,
-      &xrdb_out_pid,
-      NULL,
-      &xrdb_out_fd,
-      NULL,
-      &error
+  g_spawn_async_with_pipes (
+    NULL,
+    xrdb_out_argv,
+    NULL,
+    G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
+    NULL,
+    NULL,
+    &xrdb_out_pid,
+    NULL,
+    &xrdb_out_fd,
+    NULL,
+    &error
   );
 
-  if (error){
+  if (error) {
     g_printf (
-        "failed to launch " XRDB_COMMAND " output command: %s\n",
-        error->message
+      "failed to launch " XRDB_COMMAND " output command: %s\n",
+      error->message
     );
   }
 
   error = NULL;
 
-  const gboolean xrdb_in_result = g_spawn_async_with_pipes (
-      NULL,
-      xrdb_in_argv,
-      xrdb_in_envp,
-      G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
-      NULL,
-      NULL,
-      &xrdb_in_pid,
-      &xrdb_in_fd,
-      NULL,
-      NULL,
-      &error
+  g_spawn_async_with_pipes (
+    NULL,
+    xrdb_in_argv,
+    xrdb_in_envp,
+    G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
+    NULL,
+    NULL,
+    &xrdb_in_pid,
+    &xrdb_in_fd,
+    NULL,
+    NULL,
+    &error
   );
 
-  if (error){
+  if (error) {
     g_printf (
-        "failed to launch " XRDB_COMMAND " input command: %s\n",
-        error->message
+      "failed to launch " XRDB_COMMAND " input command: %s\n",
+      error->message
     );
   }
 
@@ -769,40 +789,42 @@ transfer_xrdb          (void)
   g_strfreev (xrdb_in_argv);
   g_strfreev (xrdb_in_envp);
 
-  GInputStream *const xrdb_stdout = g_unix_input_stream_new (
+  {
+    GInputStream *const xrdb_stdout = g_unix_input_stream_new (
       xrdb_out_fd,
       TRUE
-  );
+    );
 
-  GOutputStream *const xrdb_stdin = g_unix_output_stream_new (
+    GOutputStream *const xrdb_stdin = g_unix_output_stream_new (
       xrdb_in_fd,
       TRUE
-  );
+    );
 
-  g_output_stream_splice (
+    g_output_stream_splice (
       xrdb_stdin,
       xrdb_stdout,
       (
-          G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE |
-          G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET
+        G_OUTPUT_STREAM_SPLICE_CLOSE_SOURCE |
+        G_OUTPUT_STREAM_SPLICE_CLOSE_TARGET
       ),
       NULL,
       NULL
+    );
+  }
+
+  g_child_watch_add (
+    xrdb_out_pid,
+    watch_closing,
+    NULL
   );
 
   g_child_watch_add (
-      xrdb_out_pid,
-      watch_closing,
-      NULL
+    xrdb_in_pid,
+    watch_closing,
+    NULL
   );
 
-  g_child_watch_add (
-      xrdb_in_pid,
-      watch_closing,
-      NULL
-  );
-
-  return xrdb_out_result && xrdb_in_result;
+  return TRUE;
 
 }
 
@@ -825,34 +847,34 @@ launch_ibus_daemon     (GPid *const pid)
   GError *error = NULL;
 
   gchar **const ibus_daemon_envp = g_environ_setenv (
-      g_get_environ (),
-      g_strdup ("DISPLAY"),
-      g_strdup (XEPHYR_DISPLAY),
-      TRUE
+    g_get_environ (),
+    g_strdup ("DISPLAY"),
+    g_strdup (XEPHYR_DISPLAY),
+    TRUE
   );
 
   gchar **const ibus_daemon_argv = build_argv (
-      g_strdup (IBUS_DAEMON_COMMAND),
-      g_strdup ("--replace"),
-      g_strdup ("--xim"),
-      g_strdup ("--panel=disable"),
-      NULL
+    g_strdup (IBUS_DAEMON_COMMAND),
+    g_strdup ("--replace"),
+    g_strdup ("--xim"),
+    g_strdup ("--panel=disable"),
+    NULL
   );
 
   const gboolean ibus_daemon_result = g_spawn_async (
-      NULL,
-      ibus_daemon_argv,
-      ibus_daemon_envp,
-      G_SPAWN_SEARCH_PATH,
-      NULL,
-      NULL,
-      pid,
-      &error
+    NULL,
+    ibus_daemon_argv,
+    ibus_daemon_envp,
+    G_SPAWN_SEARCH_PATH,
+    NULL,
+    NULL,
+    pid,
+    &error
   );
 
-  if (error){
+  if (error) {
     g_printf (
-        "failed to start " IBUS_DAEMON_COMMAND ": %s\n", error->message
+      "failed to start " IBUS_DAEMON_COMMAND ": %s\n", error->message
     );
   }
 
@@ -864,8 +886,28 @@ launch_ibus_daemon     (GPid *const pid)
 }
 
 static GdkRectangle
+get_larger_monitor    (GdkScreen   *const screen,
+                       gint         const monitor_num,
+                       GdkRectangle const largest)
+{
+
+  GdkRectangle monitor;
+
+  gdk_screen_get_monitor_geometry (screen, monitor_num, &monitor);
+
+  if (monitor.width * monitor.height > largest.width * largest.height) {
+    return monitor;
+  }
+
+  return largest;
+
+}
+
+static GdkRectangle
 find_largest_monitor   (GdkScreen *const screen)
 {
+
+  const gint n_monitors = gdk_screen_get_n_monitors (screen);
 
   GdkRectangle largest_monitor = {
     .x = 0,
@@ -874,24 +916,10 @@ find_largest_monitor   (GdkScreen *const screen)
     .height = 0
   };
 
-  const gint n_monitors = gdk_screen_get_n_monitors (
-      screen
-  );
-
   gint i;
-  gint max_area = 0;
-  for (i = 0; i < n_monitors; i++){
-    GdkRectangle monitor;
-    gdk_screen_get_monitor_geometry (
-        screen,
-        i,
-        &monitor
-    );
-    const gint area = monitor.width * monitor.height;
-    if (area > max_area){
-      max_area = area;
-      largest_monitor = monitor;
-    }
+
+  for (i = 0; i < n_monitors; i++) {
+    largest_monitor = get_larger_monitor (screen, i, largest_monitor);
   }
 
   return largest_monitor;
